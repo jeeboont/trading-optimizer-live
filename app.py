@@ -645,83 +645,111 @@ if st.session_state.colab_url:
     # ==========================================
     # TAB 3: RESULTS
     # ==========================================
-    
+
     with tab3:
         st.header("📈 Optimization Results")
         
-        # Check for results
         if st.session_state.optimization_results:
             results = st.session_state.optimization_results
             
-            # Display metrics
-            st.subheader("📊 Performance Metrics")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            col1.metric("Score", f"{results.get('score', 0):.2f}")
-            col2.metric("Sharpe Ratio", f"{results.get('sharpe_ratio', 0):.2f}")
-            col3.metric("Profit Factor", f"{results.get('profit_factor', 0):.2f}")
-            col4.metric("Win Rate", f"{results.get('win_rate', 0):.1f}%")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            col1.metric("Total Trades", results.get('total_trades', 0))
-            col2.metric("Max Drawdown", f"{results.get('max_drawdown', 0):.1f}%")
-            col3.metric("Total Return", f"${results.get('total_return', 0):,.0f}")
-            col4.metric("Risk %", f"{results.get('risk_percent', 0):.1f}%")
-            
-            # Parameters table
-            st.subheader("📋 Optimized Parameters")
-            
-            params_df = pd.DataFrame([{
-                'Pivot Period': results.get('pivot_period'),
-                'ATR Period': results.get('atr_period'),
-                'ATR Factor': results.get('atr_factor'),
-                'Risk %': results.get('risk_percent'),
-                'CB Buffer': results.get('cb_buffer_pct'),
-                'Use XTrend': '✅' if results.get('use_xtrend') else '❌',
-                'Use EMA': '✅' if results.get('use_ema') else '❌',
-                'EMA Period': results.get('ema_period', 'N/A')
-            }]).T
-            
-            params_df.columns = ['Value']
-            st.dataframe(params_df, use_container_width=True)
-            
-            # Download results
-            if st.button("💾 Download Results JSON"):
-                json_str = json.dumps(results, indent=2)
-                st.download_button(
-                    label="📥 Download",
-                    data=json_str,
-                    file_name=f"optimization_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json"
+            # Check if multi-asset or single-asset results
+            if results.get('type') == 'multi_asset':
+                # Multi-asset results
+                st.subheader("🏆 Asset Comparison")
+                
+                comparison = results.get('comparison', {})
+                
+                # Best performers cards
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.info(f"""
+                    **📊 Best Score**
+                    Asset: **{comparison['best_by_score']}**
+                    """)
+                
+                with col2:
+                    st.info(f"""
+                    **📈 Best Sharpe**
+                    Asset: **{comparison['best_by_sharpe']}**
+                    """)
+                
+                with col3:
+                    st.info(f"""
+                    **🎯 Best Win Rate**
+                    Asset: **{comparison['best_by_win_rate']}**
+                    """)
+                
+                # Rankings table
+                st.subheader("📋 Asset Rankings")
+                
+                rankings_df = pd.DataFrame(comparison['rankings'])
+                rankings_df.index = rankings_df.index + 1
+                rankings_df = rankings_df[['asset', 'score', 'sharpe', 'win_rate']]
+                rankings_df.columns = ['Asset', 'Score', 'Sharpe Ratio', 'Win Rate (%)']
+                
+                st.dataframe(
+                    rankings_df.style.highlight_max(subset=['Score', 'Sharpe Ratio', 'Win Rate (%)']),
+                    use_container_width=True
                 )
+                
+                # Detailed results per asset
+                st.subheader("📊 Detailed Results by Asset")
+                
+                selected_asset = st.selectbox(
+                    "Select asset for detailed view:",
+                    options=[rank['asset'] for rank in comparison['rankings']]
+                )
+                
+                if selected_asset:
+                    asset_results = results['assets'][selected_asset]
+                    
+                    # Display metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    metrics = asset_results['metrics']
+                    col1.metric("Score", f"{asset_results['score']:.2f}")
+                    col2.metric("Sharpe Ratio", f"{metrics['sharpe_ratio']:.2f}")
+                    col3.metric("Win Rate", f"{metrics['win_rate']:.1f}%")
+                    col4.metric("Max Drawdown", f"{metrics['max_drawdown']:.1f}%")
+                    
+                    # Parameters table
+                    st.subheader(f"⚙️ Optimized Parameters for {selected_asset}")
+                    
+                    params = asset_results['parameters']
+                    params_df = pd.DataFrame([
+                        ["Pivot Period", params.get('pivot_period', 'N/A')],
+                        ["ATR Period", params.get('atr_period', 'N/A')],
+                        ["ATR Factor", params.get('atr_factor', 'N/A')],
+                        ["Risk %", params.get('risk_percent', 'N/A')],
+                        ["CB Buffer %", params.get('cb_buffer_pct', 'N/A')],
+                        ["Use XTrend", "✅" if params.get('use_xtrend') else "❌"],
+                        ["Use EMA", "✅" if params.get('use_ema') else "❌"],
+                        ["Use ADX", "✅" if params.get('use_adx') else "❌"],
+                    ], columns=["Parameter", "Value"])
+                    
+                    st.table(params_df)
+                    
+                    # Export button for this asset
+                    if st.button(f"📥 Export {selected_asset} Settings", use_container_width=True):
+                        export_data = {
+                            'asset': selected_asset,
+                            'parameters': params,
+                            'metrics': metrics,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        
+                        st.download_button(
+                            label="Download JSON",
+                            data=json.dumps(export_data, indent=2),
+                            file_name=f"{selected_asset}_optimization_{datetime.now().strftime('%Y%m%d')}.json",
+                            mime="application/json"
+                        )
             
-            # Refresh results from Colab
-            if st.button("🔄 Refresh Results from Colab"):
-                with st.spinner("Fetching latest results..."):
-                    new_results = get_optimization_results(st.session_state.colab_url)
-                    if new_results:
-                        st.session_state.optimization_results = new_results
-                        st.success("✅ Results updated!")
-                        st.rerun()
-                    else:
-                        st.warning("No new results available")
-        
-        else:
-            # No results yet
-            st.info("📊 No results available yet")
-            
-            # Try to fetch results
-            if st.button("🔍 Check for Results"):
-                with st.spinner("Checking Colab for results..."):
-                    results = get_optimization_results(st.session_state.colab_url)
-                    if results and 'error' not in results:
-                        st.session_state.optimization_results = results
-                        st.success("✅ Results found!")
-                        st.rerun()
-                    else:
-                        st.warning("No results available. Run optimization first.")
+            else:
+                # Single asset results (existing code)
+                st.info("Single asset optimization results")
+                # ... your existing single asset display code ...
     
     # ==========================================
     # TAB 4: PINE SCRIPT
