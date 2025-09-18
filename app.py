@@ -868,7 +868,6 @@ if st.session_state.colab_url:
                                 progress_placeholder.success("🎉 Results are ready in the Results tab!")
                                 st.balloons()
                                 st.session_state.optimization_running = False
-                                return  # Exit early for quick test
                         
                         # Add manual result checking buttons
                         col1, col2 = st.columns(2)
