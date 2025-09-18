@@ -922,41 +922,175 @@ if st.session_state.colab_url:
             results = st.session_state.optimization_results
             debug_log(f"Displaying results: {type(results)}")
             
-            # Display results based on structure
-            if isinstance(results, dict):
-                st.success("✅ Optimization results available!")
+            # Check if this is multi-asset results
+            if isinstance(results, dict) and 'assets' in results:
+                st.success("✅ Multi-Asset Optimization Results")
                 
-                # Show raw results for debugging
-                with st.expander("🐛 Debug: Raw Results"):
-                    st.json(results)
-                
-                # Try to extract and display meaningful data
-                if 'best_params' in results:
-                    st.subheader("🏆 Best Parameters")
-                    st.json(results['best_params'])
-                
-                if 'metrics' in results:
-                    st.subheader("📊 Performance Metrics")
-                    metrics = results['metrics']
+                # Asset Comparison Overview
+                comparison = results.get('comparison', {})
+                if comparison:
+                    st.subheader("🏆 Asset Performance Comparison")
                     
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Score", f"{metrics.get('score', 0):.2f}")
-                    col2.metric("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}")
-                    col3.metric("Win Rate", f"{metrics.get('win_rate', 0):.1f}%")
-                    col4.metric("Drawdown", f"{metrics.get('max_drawdown', 0):.1f}%")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        best_score = comparison.get('best_by_score', 'N/A')
+                        st.metric("🥇 Best Overall Score", best_score)
+                    
+                    with col2:
+                        best_sharpe = comparison.get('best_by_sharpe', 'N/A')
+                        st.metric("📈 Best Sharpe Ratio", best_sharpe)
+                    
+                    with col3:
+                        best_winrate = comparison.get('best_by_win_rate', 'N/A')
+                        st.metric("🎯 Best Win Rate", best_winrate)
                 
-                # Show any other available data
-                for key, value in results.items():
-                    if key not in ['best_params', 'metrics']:
-                        st.subheader(f"📋 {key.replace('_', ' ').title()}")
-                        if isinstance(value, (dict, list)):
-                            st.json(value)
-                        else:
-                            st.write(value)
+                # Rankings Table
+                if 'rankings' in comparison:
+                    st.subheader("📊 Asset Rankings")
+                    rankings_data = []
+                    for rank in comparison['rankings']:
+                        rankings_data.append({
+                            'Rank': len(rankings_data) + 1,
+                            'Asset': rank['asset'],
+                            'Score': f"{rank['score']:.2f}",
+                            'Sharpe Ratio': f"{rank['sharpe']:.2f}",
+                            'Win Rate': f"{rank['win_rate']:.1f}%"
+                        })
+                    
+                    rankings_df = pd.DataFrame(rankings_data)
+                    st.dataframe(
+                        rankings_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                
+                # Detailed Asset Results
+                st.subheader("📋 Detailed Results by Asset")
+                
+                assets = results.get('assets', {})
+                asset_names = list(assets.keys())
+                
+                if asset_names:
+                    selected_asset = st.selectbox(
+                        "Select asset for detailed analysis:",
+                        options=asset_names,
+                        index=0
+                    )
+                    
+                    if selected_asset in assets:
+                        asset_data = assets[selected_asset]
+                        
+                        # Performance Metrics
+                        st.markdown(f"### 📊 **{selected_asset}** Performance")
+                        
+                        metrics = asset_data.get('metrics', {})
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        col1.metric("Total Return", f"${metrics.get('total_return', 0):,}")
+                        col2.metric("Total Trades", f"{metrics.get('total_trades', 0):,}")
+                        col3.metric("Win Rate", f"{metrics.get('win_rate', 0):.1f}%")
+                        col4.metric("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}")
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        col1.metric("Profit Factor", f"{metrics.get('profit_factor', 0):.2f}")
+                        col2.metric("Max Drawdown", f"{metrics.get('max_drawdown', 0):.1f}%")
+                        col3.metric("Score", f"{asset_data.get('score', 0):.2f}")
+                        col4.metric("Status", "✅ Optimized")
+                        
+                        # Optimized Parameters
+                        st.markdown(f"### ⚙️ **{selected_asset}** Optimized Parameters")
+                        
+                        params = asset_data.get('parameters', {})
+                        
+                        # Core Parameters
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("**📈 Core Settings**")
+                            st.info(f"""
+                            **Pivot Period:** {params.get('pivot_period', 'N/A')}
+                            **ATR Period:** {params.get('atr_period', 'N/A')}
+                            **ATR Factor:** {params.get('atr_factor', 'N/A')}
+                            """)
+                        
+                        with col2:
+                            st.markdown("**💰 Risk Management**")
+                            st.info(f"""
+                            **Risk Percent:** {params.get('risk_percent', 'N/A')}%
+                            **CB Buffer:** {params.get('cb_buffer_pct', 'N/A')}%
+                            """)
+                        
+                        # Filter Settings
+                        st.markdown("**🔍 Active Filters**")
+                        filter_col1, filter_col2, filter_col3 = st.columns(3)
+                        
+                        filter_col1.success("✅ XTrend Filter" if params.get('use_xtrend') else "❌ XTrend Filter")
+                        filter_col2.success("✅ EMA Filter" if params.get('use_ema') else "❌ EMA Filter")
+                        filter_col3.success("✅ ADX Filter" if params.get('use_adx') else "❌ ADX Filter")
+                        
+                        # Export Options
+                        st.markdown("---")
+                        st.subheader("💾 Export Options")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Create export data
+                            export_data = {
+                                'asset': selected_asset,
+                                'optimization_date': datetime.now().isoformat(),
+                                'performance_metrics': metrics,
+                                'optimized_parameters': params,
+                                'score': asset_data.get('score', 0)
+                            }
+                            
+                            st.download_button(
+                                f"📄 Download {selected_asset} Results (JSON)",
+                                data=json.dumps(export_data, indent=2),
+                                file_name=f"{selected_asset}_optimization_results_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                                mime="application/json",
+                                use_container_width=True
+                            )
+                        
+                        with col2:
+                            # Pine Script parameters format
+                            pine_params = f"""// {selected_asset} Optimized Parameters
+// Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+// Core Parameters
+pivot_period = {params.get('pivot_period', 10)}
+atr_period = {params.get('atr_period', 14)}
+atr_factor = {params.get('atr_factor', 2.0)}
+
+// Risk Management
+risk_percent = {params.get('risk_percent', 1.0)}
+cb_buffer_pct = {params.get('cb_buffer_pct', 0.03)}
+
+// Filters
+use_xtrend = {"true" if params.get('use_xtrend') else "false"}
+use_ema = {"true" if params.get('use_ema') else "false"}
+use_adx = {"true" if params.get('use_adx') else "false"}
+
+// Performance: {metrics.get('win_rate', 0):.1f}% WR, {metrics.get('sharpe_ratio', 0):.2f} Sharpe, Score: {asset_data.get('score', 0):.2f}
+"""
+                            
+                            st.download_button(
+                                f"📱 Download {selected_asset} Pine Script Params",
+                                data=pine_params,
+                                file_name=f"{selected_asset}_pine_params_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                                mime="text/plain",
+                                use_container_width=True
+                            )
+                
+                # Show raw results for debugging (collapsed by default)
+                with st.expander("🐛 Debug: Raw Results Data"):
+                    st.json(results)
             
             else:
-                st.info(f"Results type: {type(results)}")
-                st.write(results)
+                # Fallback for other result formats
+                st.info("Results in alternative format:")
+                st.json(results)
         
         else:
             st.info("⏳ No optimization results yet. Run an optimization first.")
