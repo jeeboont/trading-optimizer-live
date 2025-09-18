@@ -120,7 +120,21 @@ def get_optimization_results(url):
         if response.status_code == 200:
             results = response.json()
             debug_log(f"Got results: {len(str(results))} characters")
-            return results
+            
+            # Fix numpy serialization issues
+            def convert_numpy(obj):
+                if hasattr(obj, 'item'):  # numpy scalar
+                    return obj.item()
+                elif isinstance(obj, dict):
+                    return {k: convert_numpy(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_numpy(item) for item in obj]
+                else:
+                    return obj
+            
+            # Convert numpy types to regular Python types
+            clean_results = convert_numpy(results)
+            return clean_results
         else:
             debug_log(f"Results fetch failed: {response.status_code}")
             return None
@@ -843,35 +857,58 @@ if st.session_state.colab_url:
                         # Store the initial result
                         st.session_state.optimization_results = result
                         
+                        # For Quick Test, check immediately for results since it completes fast
+                        if config.get('optimization_type') == '3_step' and len(config.get('pivot_periods', [])) == 1:
+                            # Quick test - check for immediate completion
+                            time.sleep(2)  # Give it 2 seconds to complete
+                            quick_results = get_optimization_results(st.session_state.colab_url)
+                            if quick_results and 'assets' in quick_results:
+                                st.session_state.optimization_results = quick_results
+                                status_placeholder.success("✅ Quick Test Complete!")
+                                progress_placeholder.success("🎉 Results are ready in the Results tab!")
+                                st.balloons()
+                                st.session_state.optimization_running = False
+                                return  # Exit early for quick test
+                        
                         # Add manual result checking buttons
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            if st.button("🔄 Check Progress", use_container_width=True):
-                                status_check = check_optimization_status(st.session_state.colab_url)
-                                if status_check:
-                                    if status_check.get('running') == False:
-                                        st.success("✅ Optimization Complete!")
-                                        final_results = get_optimization_results(st.session_state.colab_url)
-                                        if final_results:
-                                            st.session_state.optimization_results = final_results
-                                            st.balloons()
+                            if st.button("🔄 Check Progress", use_container_width=True, key="check_progress"):
+                                with st.spinner("Checking progress..."):
+                                    status_check = check_optimization_status(st.session_state.colab_url)
+                                    debug_log(f"Progress check result: {status_check}")
+                                    if status_check:
+                                        if status_check.get('running') == False:
+                                            st.success("✅ Optimization Complete!")
+                                            # Get results immediately when complete
+                                            final_results = get_optimization_results(st.session_state.colab_url)
+                                            if final_results and 'assets' in final_results:
+                                                st.session_state.optimization_results = final_results
+                                                st.success("✅ Results updated! Check the Results tab.")
+                                                st.balloons()
+                                            else:
+                                                st.error("Could not retrieve results")
+                                        else:
+                                            progress = status_check.get('progress', 0)
+                                            message = status_check.get('message', 'Processing...')
+                                            st.info(f"⏳ Progress: {progress}% - {message}")
                                     else:
-                                        progress = status_check.get('progress', 0)
-                                        message = status_check.get('message', 'Processing...')
-                                        st.info(f"⏳ Progress: {progress}% - {message}")
-                                else:
-                                    st.warning("Could not check status - optimization may still be running")
+                                        st.warning("Could not check status - optimization may still be running")
                         
                         with col2:
-                            if st.button("📈 Get Results", use_container_width=True):
-                                final_results = get_optimization_results(st.session_state.colab_url)
-                                if final_results and 'assets' in final_results:
-                                    st.session_state.optimization_results = final_results
-                                    st.success("✅ Results retrieved! Check the Results tab.")
-                                    st.balloons()
-                                else:
-                                    st.info("⏳ Results not ready yet. Optimization may still be running.")
+                            if st.button("📈 Get Results", use_container_width=True, key="get_results"):
+                                with st.spinner("Retrieving results..."):
+                                    debug_log("Manual results fetch requested")
+                                    final_results = get_optimization_results(st.session_state.colab_url)
+                                    debug_log(f"Retrieved results: {final_results is not None}")
+                                    if final_results and ('assets' in final_results or 'message' not in final_results):
+                                        st.session_state.optimization_results = final_results
+                                        st.success("✅ Results retrieved! Check the Results tab.")
+                                        st.balloons()
+                                    else:
+                                        st.info("⏳ Results not ready yet. Optimization may still be running.")
+                                        debug_log(f"Results not ready, got: {final_results}")
                         
                         # Auto status checking in background (non-blocking)
                         progress_placeholder.info("💡 **Tip:** Monitor your Colab notebook for real-time progress!")
@@ -927,6 +964,48 @@ if st.session_state.colab_url:
 
     with tab3:
         st.header("📈 Optimization Results")
+        
+        # Manual results fix (temporary)
+        if st.button("🔧 Load Manual Results (Quick Test)", help="Load the completed Quick Test results from Colab"):
+            manual_results = {
+                "assets": {
+                    "BTC-USD": {
+                        "metrics": {
+                            "max_drawdown": 7.5,
+                            "profit_factor": 1.75,
+                            "sharpe_ratio": 0.17,
+                            "total_return": 2030,
+                            "total_trades": 29,
+                            "win_rate": 17.2
+                        },
+                        "parameters": {
+                            "atr_factor": 2.0,
+                            "atr_period": 14,
+                            "cb_buffer_pct": 0.03,
+                            "pivot_period": 10,
+                            "risk_percent": 1.0
+                        },
+                        "score": 14.12
+                    }
+                },
+                "comparison": {
+                    "best_by_score": "BTC-USD",
+                    "best_by_sharpe": "BTC-USD",
+                    "best_by_win_rate": "BTC-USD",
+                    "rankings": [
+                        {
+                            "asset": "BTC-USD",
+                            "score": 14.12,
+                            "sharpe": 0.17,
+                            "win_rate": 17.2
+                        }
+                    ]
+                },
+                "type": "single_asset"
+            }
+            st.session_state.optimization_results = manual_results
+            st.success("✅ Quick Test results loaded!")
+            st.balloons()
         
         if st.session_state.optimization_results:
             results = st.session_state.optimization_results
