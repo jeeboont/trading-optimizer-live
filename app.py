@@ -115,7 +115,21 @@ def check_optimization_status(url):
         debug_log(f"Status check error: {str(e)}")
         return None
 
-def get_optimization_results(url):
+def stop_colab_optimization(url):
+    """Send stop command to Colab optimization"""
+    try:
+        debug_log("Sending stop command to Colab...")
+        response = requests.post(f"{url}/stop", timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            debug_log(f"Stop command result: {result}")
+            return result
+        else:
+            debug_log(f"Stop command failed: {response.status_code}")
+            return {"error": f"HTTP {response.status_code}"}
+    except Exception as e:
+        debug_log(f"Stop command error: {str(e)}")
+        return {"error": str(e)}
     """Get final results from Colab"""
     try:
         debug_log("Getting final results...")
@@ -881,7 +895,7 @@ if st.session_state.colab_url:
                         st.session_state.optimization_results = result
                         
                         # Progress monitoring buttons
-                        col1, col2, col3 = st.columns(3)
+                        col1, col2, col3, col4 = st.columns(4)
                         
                         with col1:
                             if st.button("📊 Check Status", use_container_width=True, key="check_status"):
@@ -913,7 +927,18 @@ if st.session_state.colab_url:
                                         st.info("⏳ Results not ready yet. Check Colab progress.")
                         
                         with col3:
-                            if st.button("🔄 Refresh Page", use_container_width=True, key="refresh_page"):
+                            if st.button("🛑 Stop Optimization", use_container_width=True, key="stop_optimization", type="secondary"):
+                                with st.spinner("Sending stop command to Colab..."):
+                                    stop_result = stop_colab_optimization(st.session_state.colab_url)
+                                    if stop_result and 'error' not in stop_result:
+                                        st.success("✅ Stop command sent to Colab!")
+                                        st.info("The optimization process should stop within a few seconds. Check your Colab output.")
+                                    else:
+                                        st.error(f"Failed to send stop command: {stop_result.get('error', 'Unknown error')}")
+                                        st.info("You may need to manually stop it in Colab (Step 3c)")
+                        
+                        with col4:
+                            if st.button("🔄 Refresh", use_container_width=True, key="refresh_page"):
                                 st.rerun()
                         
                         # Reset flag since we're not blocking
