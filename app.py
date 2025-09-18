@@ -1,6 +1,6 @@
 """
-Streamlit Trading Optimizer - Direct Colab Integration
-This version connects directly to your Google Colab API
+Streamlit Trading Optimizer - Direct Colab Integration (DEBUGGED VERSION)
+This version has enhanced debugging and error handling
 """
 
 import streamlit as st
@@ -12,6 +12,7 @@ from datetime import datetime
 import yfinance as yf
 import requests
 import time
+import io
 
 # ==========================================
 # PAGE CONFIGURATION
@@ -33,61 +34,123 @@ if 'optimization_running' not in st.session_state:
     st.session_state.optimization_running = False
 if 'optimization_results' not in st.session_state:
     st.session_state.optimization_results = None
+if 'debug_logs' not in st.session_state:
+    st.session_state.debug_logs = []
 
 # ==========================================
-# COLAB CONNECTION FUNCTIONS
+# DEBUG LOGGING FUNCTION
+# ==========================================
+
+def debug_log(message):
+    """Add debug message to session state"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    st.session_state.debug_logs.append(f"[{timestamp}] {message}")
+    print(f"DEBUG: {message}")  # Also print to console
+
+# ==========================================
+# COLAB CONNECTION FUNCTIONS (ENHANCED)
 # ==========================================
 
 def test_colab_connection(url):
     """Test if Colab server is accessible"""
     try:
+        debug_log(f"Testing connection to: {url}")
         response = requests.get(f"{url}/", timeout=5)
+        debug_log(f"Connection test response: {response.status_code}")
         return response.status_code == 200
-    except:
+    except Exception as e:
+        debug_log(f"Connection test failed: {str(e)}")
         return False
 
 def run_colab_optimization(url, config):
     """Send optimization request to Colab"""
     try:
+        debug_log(f"Sending optimization to: {url}/optimize")
+        debug_log(f"Config size: {len(str(config))} characters")
+        
         response = requests.post(
             f"{url}/optimize",
             json=config,
             headers={'Content-Type': 'application/json'},
-            timeout=10
+            timeout=30  # Increased timeout
         )
-        return response.json()
+        
+        debug_log(f"Optimization response status: {response.status_code}")
+        debug_log(f"Response headers: {dict(response.headers)}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            debug_log(f"Optimization response: {result}")
+            return result
+        else:
+            debug_log(f"HTTP Error {response.status_code}: {response.text}")
+            return {'error': f'HTTP {response.status_code}: {response.text}'}
+            
+    except requests.exceptions.Timeout:
+        debug_log("Request timeout - Colab might be processing")
+        return {'error': 'Request timeout - check if Colab is still running'}
+    except requests.exceptions.ConnectionError:
+        debug_log("Connection error - check Colab URL")
+        return {'error': 'Connection error - check if Colab URL is correct'}
     except Exception as e:
-        print(f"Optimization request error: {e}")  # Add debugging
+        debug_log(f"Optimization request error: {str(e)}")
         return {'error': str(e)}
 
 def check_optimization_status(url):
     """Check optimization progress"""
     try:
+        debug_log("Checking optimization status...")
         response = requests.get(f"{url}/status", timeout=5)
-        return response.json()
-    except:
+        if response.status_code == 200:
+            status = response.json()
+            debug_log(f"Status: {status}")
+            return status
+        else:
+            debug_log(f"Status check failed: {response.status_code}")
+            return None
+    except Exception as e:
+        debug_log(f"Status check error: {str(e)}")
         return None
 
 def get_optimization_results(url):
     """Get final results from Colab"""
     try:
-        response = requests.get(f"{url}/results", timeout=5)
-        return response.json()
-    except:
+        debug_log("Getting final results...")
+        response = requests.get(f"{url}/results", timeout=10)
+        if response.status_code == 200:
+            results = response.json()
+            debug_log(f"Got results: {len(str(results))} characters")
+            return results
+        else:
+            debug_log(f"Results fetch failed: {response.status_code}")
+            return None
+    except Exception as e:
+        debug_log(f"Results fetch error: {str(e)}")
         return None
 
 def upload_data_to_colab(url, csv_data):
     """Send CSV data to Colab"""
     try:
-        # Send as raw data, not as file
+        debug_log(f"Uploading data to Colab: {len(csv_data)} characters")
         response = requests.post(
             f"{url}/upload_data",
-            data=csv_data,  # Send CSV string directly
+            data=csv_data,
             headers={'Content-Type': 'text/plain'},
-            timeout=30
+            timeout=60  # Increased timeout for data upload
         )
-        return response.json()
+        
+        debug_log(f"Upload response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            debug_log(f"Upload successful: {result}")
+            return result
+        else:
+            debug_log(f"Upload failed: {response.text}")
+            return {'error': f'Upload failed: {response.text}'}
+            
     except Exception as e:
+        debug_log(f"Upload error: {str(e)}")
         return {'error': str(e)}
 
 # ==========================================
@@ -95,12 +158,9 @@ def upload_data_to_colab(url, csv_data):
 # ==========================================
 
 st.title("🔄 Trading Strategy Optimizer")
-st.markdown("*Direct Integration with Google Colab*")
+st.markdown("*Direct Integration with Google Colab (Debug Version)*")
 
-# ==========================================
-# SIDEBAR - COLAB CONNECTION
-# ==========================================
-
+# Debug panel in sidebar
 with st.sidebar:
     st.header("🔌 Colab Connection")
     
@@ -130,34 +190,31 @@ with st.sidebar:
     
     if st.button("🔗 Connect to Colab"):
         if colab_url:
-            # Test connection
+            debug_log(f"Attempting to connect to: {colab_url}")
             with st.spinner("Testing connection..."):
                 if test_colab_connection(colab_url):
                     st.session_state.colab_url = colab_url
                     st.success("✅ Successfully connected!")
+                    debug_log("Connection successful!")
                     st.balloons()
                 else:
                     st.error("❌ Could not connect. Check URL and ensure Colab is running.")
+                    debug_log("Connection failed!")
         else:
             st.warning("Please enter a URL")
     
-    # Connection guide
-    with st.expander("📖 Connection Guide"):
-        st.markdown("""
-        **Step 1:** Open Google Colab
-        - Go to the Colab notebook
-        - Run all cells in order
-        
-        **Step 2:** Get the URL
-        - Look for the ngrok URL in output
-        - It looks like: `https://xxxxx.ngrok.io`
-        
-        **Step 3:** Connect
-        - Paste the URL above
-        - Click Connect
-        
-        **Note:** Keep Colab running!
-        """)
+    # Debug panel
+    if st.checkbox("🐛 Show Debug Logs"):
+        st.markdown("### Debug Logs:")
+        if st.session_state.debug_logs:
+            for log in st.session_state.debug_logs[-10:]:  # Show last 10 logs
+                st.text(log)
+            
+            if st.button("Clear Logs"):
+                st.session_state.debug_logs = []
+                st.rerun()
+        else:
+            st.text("No logs yet...")
 
 # ==========================================
 # MAIN CONTENT TABS
@@ -173,14 +230,8 @@ if st.session_state.colab_url:
     ])
     
     # ==========================================
-    # TAB 1: DATA UPLOAD
+    # TAB 1: DATA UPLOAD (Your existing code)
     # ==========================================
-    
-    import streamlit as st
-    import yfinance as yf
-    import pandas as pd
-    from datetime import datetime, timedelta
-    import io
     
     # Predefined popular assets for dropdown
     POPULAR_ASSETS = {
@@ -231,6 +282,7 @@ if st.session_state.colab_url:
     def search_ticker(query):
         """Search for ticker symbols"""
         try:
+            debug_log(f"Searching for ticker: {query}")
             # Try common variations
             variations = [
                 query.upper(),
@@ -244,6 +296,7 @@ if st.session_state.colab_url:
                     ticker = yf.Ticker(symbol)
                     info = ticker.info
                     if info and ('longName' in info or 'shortName' in info):
+                        debug_log(f"Found ticker: {symbol}")
                         return {
                             'symbol': symbol,
                             'name': info.get('longName') or info.get('shortName', symbol),
@@ -252,8 +305,10 @@ if st.session_state.colab_url:
                 except:
                     continue
             
+            debug_log(f"Ticker not verified: {query}")
             return {'symbol': query.upper(), 'name': 'Symbol not verified', 'found': False}
-        except:
+        except Exception as e:
+            debug_log(f"Ticker search error: {str(e)}")
             return {'symbol': query.upper(), 'name': 'Symbol not verified', 'found': False}
     
     # Data Upload Tab Content
@@ -305,6 +360,7 @@ if st.session_state.colab_url:
                                         'name': selected_display
                                     })
                                     st.success(f"Added {selected_display}")
+                                    debug_log(f"Added asset: {symbol}")
                                     st.rerun()
                                 else:
                                     st.error("Maximum 5 assets allowed")
@@ -344,6 +400,7 @@ if st.session_state.colab_url:
                                         'name': result['name']
                                     })
                                     st.success(f"Added {result['symbol']}")
+                                    debug_log(f"Added custom asset: {result['symbol']}")
                                     st.rerun()
                                 else:
                                     st.error("Maximum 5 assets allowed")
@@ -362,6 +419,7 @@ if st.session_state.colab_url:
                     with col_remove:
                         if st.button("❌", key=f"remove_{asset['symbol']}"):
                             st.session_state.selected_assets.remove(asset)
+                            debug_log(f"Removed asset: {asset['symbol']}")
                             st.rerun()
                 
                 st.info(f"Selected: {len(st.session_state.selected_assets)}/5 assets")
@@ -417,6 +475,8 @@ if st.session_state.colab_url:
                             use_container_width=True,
                             disabled=not st.session_state.colab_url):
                     
+                    debug_log(f"Starting download for {len(st.session_state.selected_assets)} assets")
+                    
                     with st.spinner(f"Downloading {len(st.session_state.selected_assets)} assets..."):
                         # Download data for all selected assets
                         all_data = {}
@@ -424,6 +484,7 @@ if st.session_state.colab_url:
                         
                         progress_bar = st.progress(0)
                         for i, asset in enumerate(st.session_state.selected_assets):
+                            debug_log(f"Downloading {asset['symbol']}...")
                             progress_bar.progress((i + 1) / len(st.session_state.selected_assets))
                             
                             try:
@@ -436,34 +497,39 @@ if st.session_state.colab_url:
                                 if not data.empty:
                                     all_data[asset['symbol']] = data
                                     st.success(f"✅ {asset['symbol']}: {len(data)} rows")
+                                    debug_log(f"Downloaded {asset['symbol']}: {len(data)} rows")
                                 else:
                                     failed.append(asset['symbol'])
                                     st.warning(f"⚠️ {asset['symbol']}: No data")
+                                    debug_log(f"No data for {asset['symbol']}")
                             except Exception as e:
                                 failed.append(asset['symbol'])
                                 st.error(f"❌ {asset['symbol']}: {str(e)}")
+                                debug_log(f"Failed to download {asset['symbol']}: {str(e)}")
                         
                         if all_data:
+                            debug_log("Preparing data for Colab...")
                             # Combine all data (for Colab optimization)
-                            # You can modify this based on how your optimization handles multiple assets
                             if len(all_data) == 1:
                                 # Single asset - send as is
                                 combined_data = list(all_data.values())[0]
                             else:
-                                # Multiple assets - you might want to handle differently
-                                # For now, let's send them separately or combined based on your needs
-                                combined_data = pd.concat(all_data, axis=1, keys=all_data.keys())
+                                # Multiple assets - send first asset for now (you can modify this)
+                                combined_data = list(all_data.values())[0]
+                                st.info(f"Note: Using {list(all_data.keys())[0]} for optimization")
                             
                             # Convert to CSV
                             csv_buffer = io.StringIO()
                             combined_data.to_csv(csv_buffer)
                             csv_data = csv_buffer.getvalue()
                             
+                            debug_log(f"CSV data prepared: {len(csv_data)} characters")
+                            
                             # Send to Colab
                             if st.session_state.colab_url:
                                 result = upload_data_to_colab(st.session_state.colab_url, csv_data)
                                 if 'error' not in result:
-                                    st.success(f"✅ Data sent to Colab! Rows: {result.get('rows')}")
+                                    st.success(f"✅ Data sent to Colab! Rows: {result.get('rows', 'Unknown')}")
                                     st.session_state.data_uploaded = True
                                     
                                     # Store metadata for optimization
@@ -473,8 +539,10 @@ if st.session_state.colab_url:
                                         'period': period,
                                         'rows': len(combined_data)
                                     }
+                                    debug_log("Data upload successful!")
                                 else:
                                     st.error(f"Failed to send to Colab: {result.get('error')}")
+                                    debug_log(f"Upload failed: {result.get('error')}")
                         
                         if failed:
                             st.warning(f"Failed to download: {', '.join(failed)}")
@@ -501,7 +569,7 @@ if st.session_state.colab_url:
             st.info(f"Assets: {', '.join(meta['assets'])}")
     
     # ==========================================
-    # TAB 2: OPTIMIZATION
+    # TAB 2: OPTIMIZATION (FIXED)
     # ==========================================
     
     with tab2:
@@ -602,7 +670,7 @@ if st.session_state.colab_url:
             st.info("Define your custom 3-step parameters")
             config = {'optimization_type': '3_step_custom'}
             
-            # Custom parameter inputs
+            # Custom parameter inputs (your existing code)
             col1, col2 = st.columns(2)
             
             with col1:
@@ -714,38 +782,93 @@ if st.session_state.colab_url:
             help="Composite score uses weighted combination"
         )
         
-        # Run optimization button
+        # Run optimization button (FIXED)
         st.markdown("---")
         
-    if st.button("🚀 Start 3-Step Optimization", type="primary", use_container_width=True):
-        st.write("Button clicked!")  # Debug line
-        
-        if not st.session_state.optimization_running:
-            st.session_state.optimization_running = True
-            st.session_state.optimization_config = config
+        if st.button("🚀 Start 3-Step Optimization", type="primary", use_container_width=True):
+            debug_log("Optimization button clicked!")
             
-            st.write("Sending to Colab...")  # Debug line
+            if not st.session_state.optimization_running:
+                st.session_state.optimization_running = True
+                st.session_state.optimization_config = config
+                
+                debug_log("Preparing to send optimization to Colab...")
+                debug_log(f"Config keys: {list(config.keys())}")
+                debug_log(f"Colab URL: {st.session_state.colab_url}")
+                
+                # Create a placeholder for real-time updates
+                status_placeholder = st.empty()
+                progress_placeholder = st.empty()
+                
+                try:
+                    # Send to Colab
+                    status_placeholder.info("🚀 Sending optimization request to Colab...")
+                    result = run_colab_optimization(st.session_state.colab_url, config)
+                    
+                    debug_log(f"Optimization response received: {result}")
+                    
+                    if result and 'error' not in result:
+                        status_placeholder.success("✅ 3-Step Optimization Started!")
+                        
+                        st.info("""
+                        **Optimization Progress:**
+                        1. Step 1: Core Parameters → Finding optimal Pivot/ATR settings
+                        2. Step 2: Risk Management → Optimizing CB and position sizing
+                        3. Step 3: Filters → Testing combinations and thresholds
+                        """)
+                        
+                        # Store the initial result
+                        st.session_state.optimization_results = result
+                        
+                        # Show progress tracking
+                        progress_placeholder.info("⏳ Monitoring optimization progress...")
+                        
+                        # Check status periodically
+                        max_checks = 30  # Check for up to 5 minutes
+                        for i in range(max_checks):
+                            time.sleep(10)  # Wait 10 seconds between checks
+                            
+                            status = check_optimization_status(st.session_state.colab_url)
+                            debug_log(f"Status check {i+1}/{max_checks}: {status}")
+                            
+                            if status:
+                                if status.get('status') == 'complete':
+                                    # Get final results
+                                    final_results = get_optimization_results(st.session_state.colab_url)
+                                    if final_results:
+                                        st.session_state.optimization_results = final_results
+                                        status_placeholder.success("✅ Optimization Complete!")
+                                        progress_placeholder.success("🎉 Results are ready in the Results tab!")
+                                        break
+                                elif status.get('status') == 'error':
+                                    status_placeholder.error(f"❌ Optimization failed: {status.get('error', 'Unknown error')}")
+                                    break
+                                else:
+                                    # Still running
+                                    progress = status.get('progress', 0)
+                                    current_step = status.get('current_step', 'Processing...')
+                                    progress_placeholder.info(f"⏳ Progress: {progress}% - {current_step}")
+                            else:
+                                # No status response - might still be starting up
+                                progress_placeholder.warning(f"⏳ Waiting for status... (check {i+1}/{max_checks})")
+                        
+                        st.session_state.optimization_running = False
+                        
+                    else:
+                        error_msg = result.get('error', 'Unknown error') if result else 'No response from Colab'
+                        status_placeholder.error(f"❌ Failed to start: {error_msg}")
+                        st.session_state.optimization_running = False
+                        
+                except Exception as e:
+                    status_placeholder.error(f"❌ Connection error: {str(e)}")
+                    debug_log(f"Exception during optimization: {str(e)}")
+                    st.session_state.optimization_running = False
             
-            # Send to Colab
-            result = run_colab_optimization(st.session_state.colab_url, config)
-            
-            st.write(f"Result: {result}")  # Debug line
-            
-            if result and 'error' not in result:
-                st.success("✅ 3-Step Optimization Started!")
-                st.info("""
-                Optimization Progress:
-                1. Step 1: Core Parameters → Finding optimal Pivot/ATR settings
-                2. Step 2: Risk Management → Optimizing CB and position sizing
-                3. Step 3: Filters → Testing combinations and thresholds
-                """)
-                # Don't use st.rerun() immediately - let user see the messages
             else:
-                st.error(f"Failed to start: {result.get('error', 'Unknown error')}")
-                st.session_state.optimization_running = False
+                st.warning("⚠️ Optimization is already running!")
     
     # ==========================================
-    # TAB 3: RESULTS
+    # TAB 3: RESULTS (Enhanced)
     # ==========================================
 
     with tab3:
@@ -753,108 +876,55 @@ if st.session_state.colab_url:
         
         if st.session_state.optimization_results:
             results = st.session_state.optimization_results
+            debug_log(f"Displaying results: {type(results)}")
             
-            # Check if multi-asset or single-asset results
-            if results.get('type') == 'multi_asset':
-                # Multi-asset results
-                st.subheader("🏆 Asset Comparison")
+            # Display results based on structure
+            if isinstance(results, dict):
+                st.success("✅ Optimization results available!")
                 
-                comparison = results.get('comparison', {})
+                # Show raw results for debugging
+                with st.expander("🐛 Debug: Raw Results"):
+                    st.json(results)
                 
-                # Best performers cards
-                col1, col2, col3 = st.columns(3)
+                # Try to extract and display meaningful data
+                if 'best_params' in results:
+                    st.subheader("🏆 Best Parameters")
+                    st.json(results['best_params'])
                 
-                with col1:
-                    st.info(f"""
-                    **📊 Best Score**
-                    Asset: **{comparison['best_by_score']}**
-                    """)
-                
-                with col2:
-                    st.info(f"""
-                    **📈 Best Sharpe**
-                    Asset: **{comparison['best_by_sharpe']}**
-                    """)
-                
-                with col3:
-                    st.info(f"""
-                    **🎯 Best Win Rate**
-                    Asset: **{comparison['best_by_win_rate']}**
-                    """)
-                
-                # Rankings table
-                st.subheader("📋 Asset Rankings")
-                
-                rankings_df = pd.DataFrame(comparison['rankings'])
-                rankings_df.index = rankings_df.index + 1
-                rankings_df = rankings_df[['asset', 'score', 'sharpe', 'win_rate']]
-                rankings_df.columns = ['Asset', 'Score', 'Sharpe Ratio', 'Win Rate (%)']
-                
-                st.dataframe(
-                    rankings_df.style.highlight_max(subset=['Score', 'Sharpe Ratio', 'Win Rate (%)']),
-                    use_container_width=True
-                )
-                
-                # Detailed results per asset
-                st.subheader("📊 Detailed Results by Asset")
-                
-                selected_asset = st.selectbox(
-                    "Select asset for detailed view:",
-                    options=[rank['asset'] for rank in comparison['rankings']]
-                )
-                
-                if selected_asset:
-                    asset_results = results['assets'][selected_asset]
+                if 'metrics' in results:
+                    st.subheader("📊 Performance Metrics")
+                    metrics = results['metrics']
                     
-                    # Display metrics
                     col1, col2, col3, col4 = st.columns(4)
-                    
-                    metrics = asset_results['metrics']
-                    col1.metric("Score", f"{asset_results['score']:.2f}")
-                    col2.metric("Sharpe Ratio", f"{metrics['sharpe_ratio']:.2f}")
-                    col3.metric("Win Rate", f"{metrics['win_rate']:.1f}%")
-                    col4.metric("Max Drawdown", f"{metrics['max_drawdown']:.1f}%")
-                    
-                    # Parameters table
-                    st.subheader(f"⚙️ Optimized Parameters for {selected_asset}")
-                    
-                    params = asset_results['parameters']
-                    params_df = pd.DataFrame([
-                        ["Pivot Period", params.get('pivot_period', 'N/A')],
-                        ["ATR Period", params.get('atr_period', 'N/A')],
-                        ["ATR Factor", params.get('atr_factor', 'N/A')],
-                        ["Risk %", params.get('risk_percent', 'N/A')],
-                        ["CB Buffer %", params.get('cb_buffer_pct', 'N/A')],
-                        ["Use XTrend", "✅" if params.get('use_xtrend') else "❌"],
-                        ["Use EMA", "✅" if params.get('use_ema') else "❌"],
-                        ["Use ADX", "✅" if params.get('use_adx') else "❌"],
-                    ], columns=["Parameter", "Value"])
-                    
-                    st.table(params_df)
-                    
-                    # Export button for this asset
-                    if st.button(f"📥 Export {selected_asset} Settings", use_container_width=True):
-                        export_data = {
-                            'asset': selected_asset,
-                            'parameters': params,
-                            'metrics': metrics,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                        
-                        st.download_button(
-                            label="Download JSON",
-                            data=json.dumps(export_data, indent=2),
-                            file_name=f"{selected_asset}_optimization_{datetime.now().strftime('%Y%m%d')}.json",
-                            mime="application/json"
-                        )
+                    col1.metric("Score", f"{metrics.get('score', 0):.2f}")
+                    col2.metric("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}")
+                    col3.metric("Win Rate", f"{metrics.get('win_rate', 0):.1f}%")
+                    col4.metric("Drawdown", f"{metrics.get('max_drawdown', 0):.1f}%")
+                
+                # Show any other available data
+                for key, value in results.items():
+                    if key not in ['best_params', 'metrics']:
+                        st.subheader(f"📋 {key.replace('_', ' ').title()}")
+                        if isinstance(value, (dict, list)):
+                            st.json(value)
+                        else:
+                            st.write(value)
             
             else:
-                # Single asset results (existing code)
-                st.info("Single asset optimization results")
-                # ... your existing single asset display code ...
+                st.info(f"Results type: {type(results)}")
+                st.write(results)
+        
+        else:
+            st.info("⏳ No optimization results yet. Run an optimization first.")
+            
+            # Show debug logs in results tab too
+            if st.session_state.debug_logs:
+                with st.expander("🐛 Recent Debug Logs"):
+                    for log in st.session_state.debug_logs[-5:]:
+                        st.text(log)
     
     # ==========================================
-    # TAB 4: PINE SCRIPT
+    # TAB 4: PINE SCRIPT (Simplified for now)
     # ==========================================
     
     with tab4:
@@ -863,55 +933,33 @@ if st.session_state.colab_url:
         if st.session_state.optimization_results:
             results = st.session_state.optimization_results
             
-            # Generate Pine Script
+            # Basic Pine Script template
             pine_script = f"""// Trading Strategy - Live Colab Optimization
 // Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
-// Colab Integration Version
+// Debug Version
 
 //@version=5
 strategy("Colab Optimized Strategy", overlay=true,
          initial_capital=10000,
          default_qty_type=strategy.percent_of_equity,
-         default_qty_value={results.get('risk_percent', 1.0)})
+         default_qty_value=1.0)
 
-// === COLAB OPTIMIZED PARAMETERS ===
-pivot_period = {results.get('pivot_period', 10)}
-atr_period = {results.get('atr_period', 14)}
-atr_factor = {results.get('atr_factor', 2.0)}
-cb_buffer_pct = {results.get('cb_buffer_pct', 0.03)}
-risk_percent = {results.get('risk_percent', 1.0)}
+// === RESULTS FROM COLAB ===
+// {results}
 
-// === FILTERS (from Colab) ===
-use_xtrend = {"true" if results.get('use_xtrend') else "false"}
-use_ema = {"true" if results.get('use_ema') else "false"}
-ema_period = {results.get('ema_period', 30)}
-
-// === STRATEGY LOGIC ===
-// [Your strategy implementation here]
-
-// === METRICS FROM COLAB ===
-// Sharpe: {results.get('sharpe_ratio', 0):.2f}
-// PF: {results.get('profit_factor', 0):.2f}
-// WR: {results.get('win_rate', 0):.1f}%
-// DD: {results.get('max_drawdown', 0):.1f}%
+// === BASIC STRATEGY TEMPLATE ===
+// Add your strategy logic here based on the optimization results
 """
             
             st.code(pine_script, language='javascript')
             
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.download_button(
-                    "💾 Download Pine Script",
-                    data=pine_script,
-                    file_name="colab_optimized_strategy.pine",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-            
-            with col2:
-                if st.button("📋 Copy to Clipboard", use_container_width=True):
-                    st.success("✅ Copied!")
+            st.download_button(
+                "💾 Download Pine Script Template",
+                data=pine_script,
+                file_name="colab_optimized_strategy.pine",
+                mime="text/plain",
+                use_container_width=True
+            )
         
         else:
             st.warning("⚠️ No optimization results available")
@@ -924,17 +972,17 @@ else:
     ### 🔌 How to Connect:
     
     1. **Open Google Colab** and run the optimization notebook
-    2. **Get the ngrok URL** from the Colab output
+    2. **Get the ngrok URL** from the Colab output  
     3. **Enter the URL** in the sidebar
     4. **Click Connect** to establish connection
     
-    ### 📚 Benefits of Direct Integration:
+    ### 🐛 Debug Features Added:
     
-    - ✅ **Real-time optimization** - Run directly on Colab's GPU/TPU
-    - ✅ **Live progress tracking** - See optimization status in real-time
-    - ✅ **Automatic data transfer** - No manual copying needed
-    - ✅ **Instant results** - Get results as soon as optimization completes
-    - ✅ **Resource efficiency** - Use Colab's free compute resources
+    - ✅ **Enhanced logging** - Track all API calls and responses
+    - ✅ **Better error handling** - More detailed error messages
+    - ✅ **Connection testing** - Verify Colab is responding
+    - ✅ **Request debugging** - See exactly what's being sent
+    - ✅ **Progress monitoring** - Real-time optimization tracking
     
     ### 🚀 Get Started:
     
@@ -949,8 +997,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: #888;'>
-        Trading Strategy Optimizer | Direct Colab Integration | 
-        <a href='#' style='color: #888;'>Documentation</a>
+        Trading Strategy Optimizer | Debug Version | Direct Colab Integration
     </div>
     """,
     unsafe_allow_html=True
