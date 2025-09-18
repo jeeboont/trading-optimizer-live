@@ -173,74 +173,329 @@ if st.session_state.colab_url:
     # TAB 1: DATA UPLOAD
     # ==========================================
     
+    import streamlit as st
+    import yfinance as yf
+    import pandas as pd
+    from datetime import datetime, timedelta
+    import io
+    
+    # Predefined popular assets for dropdown
+    POPULAR_ASSETS = {
+        'Crypto': {
+            'Bitcoin (BTC-USD)': 'BTC-USD',
+            'Ethereum (ETH-USD)': 'ETH-USD',
+            'Litecoin (LTC-USD)': 'LTC-USD',
+            'Ripple (XRP-USD)': 'XRP-USD',
+            'Cardano (ADA-USD)': 'ADA-USD',
+        },
+        'Forex': {
+            'EUR/USD': 'EURUSD=X',
+            'GBP/USD': 'GBPUSD=X',
+            'USD/JPY': 'USDJPY=X',
+            'AUD/USD': 'AUDUSD=X',
+            'USD/CAD': 'USDCAD=X',
+        },
+        'Commodities': {
+            'Gold': 'GC=F',
+            'Silver': 'SI=F',
+            'Crude Oil': 'CL=F',
+            'Natural Gas': 'NG=F',
+        },
+        'Stocks': {
+            'Apple': 'AAPL',
+            'Microsoft': 'MSFT',
+            'Tesla': 'TSLA',
+            'Amazon': 'AMZN',
+            'Google': 'GOOGL',
+        },
+        'ETFs': {
+            'S&P 500 (SPY)': 'SPY',
+            'Nasdaq (QQQ)': 'QQQ',
+            'Dow Jones (DIA)': 'DIA',
+        }
+    }
+    
+    # Timeframe configurations with data limits
+    TIMEFRAME_LIMITS = {
+        '1m': {'name': '1 Minute', 'max_days': 7, 'period': '7d', 'description': 'Max 7 days'},
+        '2m': {'name': '2 Minutes', 'max_days': 60, 'period': '1mo', 'description': 'Max 60 days'},
+        '5m': {'name': '5 Minutes', 'max_days': 60, 'period': '1mo', 'description': 'Max 60 days'},
+        '15m': {'name': '15 Minutes', 'max_days': 60, 'period': '1mo', 'description': 'Max 60 days'},
+        '1h': {'name': '1 Hour', 'max_days': 730, 'period': '2y', 'description': 'Max 2 years'},
+        '1d': {'name': 'Daily', 'max_days': None, 'period': '1y', 'description': 'All available'},
+    }
+    
+    def search_ticker(query):
+        """Search for ticker symbols"""
+        try:
+            # Try common variations
+            variations = [
+                query.upper(),
+                f"{query.upper()}-USD",
+                f"{query.upper()}USD=X",
+                f"{query.upper()}=F"
+            ]
+            
+            for symbol in variations:
+                try:
+                    ticker = yf.Ticker(symbol)
+                    info = ticker.info
+                    if info and ('longName' in info or 'shortName' in info):
+                        return {
+                            'symbol': symbol,
+                            'name': info.get('longName') or info.get('shortName', symbol),
+                            'found': True
+                        }
+                except:
+                    continue
+            
+            return {'symbol': query.upper(), 'name': 'Symbol not verified', 'found': False}
+        except:
+            return {'symbol': query.upper(), 'name': 'Symbol not verified', 'found': False}
+    
+    # Data Upload Tab Content
     with tab1:
-        st.header("📊 Data Management")
+        st.header("📊 Data Upload")
         
-        col1, col2 = st.columns(2)
+        # Initialize session state
+        if 'selected_assets' not in st.session_state:
+            st.session_state.selected_assets = []
+        if 'data_uploaded' not in st.session_state:
+            st.session_state.data_uploaded = False
+        
+        col1, col2 = st.columns([3, 2])
         
         with col1:
-            st.subheader("📤 Upload to Colab")
+            st.subheader("🎯 Asset Selection")
             
-            uploaded_file = st.file_uploader(
-                "Choose CSV file",
-                type="csv",
-                help="Upload OHLCV data for optimization"
+            # Asset selection method
+            selection_method = st.radio(
+                "Choose selection method:",
+                ["Popular Assets (Dropdown)", "Custom Search"],
+                horizontal=True
             )
             
-            if uploaded_file is not None:
-                # Preview data
-                df = pd.read_csv(uploaded_file)
-                st.success(f"✅ Loaded {len(df)} rows")
-                st.dataframe(df.head())
+            if selection_method == "Popular Assets (Dropdown)":
+                # Category selection
+                category = st.selectbox(
+                    "Select category:",
+                    options=list(POPULAR_ASSETS.keys())
+                )
                 
-                if st.button("📤 Send to Colab", type="primary"):
-                    with st.spinner("Uploading to Colab..."):
-                        # Reset file pointer
-                        uploaded_file.seek(0)
-                        result = upload_data_to_colab(
-                            st.session_state.colab_url, 
-                            uploaded_file
-                        )
-                        
-                        if 'error' not in result:
-                            st.success(f"✅ Data uploaded! Rows: {result.get('rows')}")
+                # Asset selection from category
+                asset_options = list(POPULAR_ASSETS[category].keys())
+                selected_display = st.selectbox(
+                    f"Select {category} asset:",
+                    options=['-- Select --'] + asset_options
+                )
+                
+                if selected_display != '-- Select --':
+                    symbol = POPULAR_ASSETS[category][selected_display]
+                    
+                    col_add, col_info = st.columns([1, 3])
+                    with col_add:
+                        if st.button("➕ Add Asset", type="primary", use_container_width=True):
+                            if symbol not in [a['symbol'] for a in st.session_state.selected_assets]:
+                                if len(st.session_state.selected_assets) < 5:
+                                    st.session_state.selected_assets.append({
+                                        'symbol': symbol,
+                                        'name': selected_display
+                                    })
+                                    st.success(f"Added {selected_display}")
+                                    st.rerun()
+                                else:
+                                    st.error("Maximum 5 assets allowed")
+                            else:
+                                st.warning("Asset already selected")
+                    
+                    with col_info:
+                        st.info(f"Symbol: {symbol}")
+            
+            else:  # Custom Search
+                search_query = st.text_input(
+                    "Enter symbol or company name:",
+                    placeholder="e.g., AAPL, Bitcoin, EUR/USD"
+                )
+                
+                if search_query:
+                    col_search, col_add = st.columns([2, 1])
+                    
+                    with col_search:
+                        if st.button("🔍 Search", use_container_width=True):
+                            with st.spinner("Searching..."):
+                                result = search_ticker(search_query)
+                                st.session_state.search_result = result
+                    
+                    if 'search_result' in st.session_state:
+                        result = st.session_state.search_result
+                        if result['found']:
+                            st.success(f"Found: {result['name']} ({result['symbol']})")
                         else:
-                            st.error(f"❌ Upload failed: {result['error']}")
+                            st.warning(f"Not verified, but you can still add: {result['symbol']}")
+                        
+                        if st.button(f"➕ Add {result['symbol']}", type="primary"):
+                            if result['symbol'] not in [a['symbol'] for a in st.session_state.selected_assets]:
+                                if len(st.session_state.selected_assets) < 5:
+                                    st.session_state.selected_assets.append({
+                                        'symbol': result['symbol'],
+                                        'name': result['name']
+                                    })
+                                    st.success(f"Added {result['symbol']}")
+                                    st.rerun()
+                                else:
+                                    st.error("Maximum 5 assets allowed")
+                            else:
+                                st.warning("Asset already selected")
+            
+            # Display selected assets
+            if st.session_state.selected_assets:
+                st.markdown("---")
+                st.subheader("📋 Selected Assets")
+                
+                for i, asset in enumerate(st.session_state.selected_assets):
+                    col_name, col_remove = st.columns([4, 1])
+                    with col_name:
+                        st.write(f"{i+1}. **{asset['name']}** ({asset['symbol']})")
+                    with col_remove:
+                        if st.button("❌", key=f"remove_{asset['symbol']}"):
+                            st.session_state.selected_assets.remove(asset)
+                            st.rerun()
+                
+                st.info(f"Selected: {len(st.session_state.selected_assets)}/5 assets")
         
         with col2:
-            st.subheader("📡 Download from Yahoo")
+            st.subheader("⏰ Timeframe & Period")
             
-            symbol = st.text_input("Symbol", value="EURUSD=X")
-            period = st.selectbox("Period", ["1mo", "3mo", "6mo"])
-            interval = st.selectbox("Interval", ["5m", "15m", "1h"])
+            # Timeframe selection with data limits display
+            selected_timeframe = st.selectbox(
+                "Select timeframe:",
+                options=list(TIMEFRAME_LIMITS.keys()),
+                format_func=lambda x: f"{TIMEFRAME_LIMITS[x]['name']} ({TIMEFRAME_LIMITS[x]['description']})",
+                index=2  # Default to 5m
+            )
             
-            if st.button("📥 Download & Send to Colab"):
-                with st.spinner("Downloading..."):
-                    try:
-                        data = yf.download(
-                            tickers=symbol,
-                            period=period,
-                            interval=interval,
-                            progress=False
-                        )
+            tf_config = TIMEFRAME_LIMITS[selected_timeframe]
+            
+            # Display timeframe info card
+            st.info(f"""
+            **{tf_config['name']} Data Limits:**
+            - Maximum available: {tf_config['description']}
+            - Auto-selected period: {tf_config['period']}
+            - Best for: {'Intraday' if selected_timeframe in ['1m', '2m', '5m', '15m'] else 'Swing/Position'}
+            """)
+            
+            # Period selection (simplified)
+            use_max_period = st.checkbox("Use maximum available period", value=True)
+            
+            if not use_max_period:
+                custom_period = st.selectbox(
+                    "Custom period:",
+                    options=['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y'],
+                    index=2
+                )
+                period = custom_period
+            else:
+                period = tf_config['period']
+            
+            st.success(f"Will download: {period} of {tf_config['name']} data")
+        
+        # Download section
+        st.markdown("---")
+        st.subheader("📥 Download & Send to Colab")
+        
+        if not st.session_state.selected_assets:
+            st.warning("Please select at least one asset to continue")
+        else:
+            col_download, col_status = st.columns([2, 1])
+            
+            with col_download:
+                if st.button("📥 Download & Send to Colab", 
+                            type="primary", 
+                            use_container_width=True,
+                            disabled=not st.session_state.colab_url):
+                    
+                    with st.spinner(f"Downloading {len(st.session_state.selected_assets)} assets..."):
+                        # Download data for all selected assets
+                        all_data = {}
+                        failed = []
                         
-                        # Save to temporary CSV
-                        csv_buffer = data.to_csv()
-                        
-                        # Send to Colab
-                        files = {'file': ('data.csv', csv_buffer)}
-                        response = requests.post(
-                            f"{st.session_state.colab_url}/upload_data",
-                            files=files
-                        )
-                        
-                        if response.status_code == 200:
-                            st.success(f"✅ Data sent to Colab! Rows: {len(data)}")
-                        else:
-                            st.error("Failed to send to Colab")
+                        progress_bar = st.progress(0)
+                        for i, asset in enumerate(st.session_state.selected_assets):
+                            progress_bar.progress((i + 1) / len(st.session_state.selected_assets))
                             
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+                            try:
+                                ticker = yf.Ticker(asset['symbol'])
+                                data = ticker.history(
+                                    period=period,
+                                    interval=selected_timeframe
+                                )
+                                
+                                if not data.empty:
+                                    all_data[asset['symbol']] = data
+                                    st.success(f"✅ {asset['symbol']}: {len(data)} rows")
+                                else:
+                                    failed.append(asset['symbol'])
+                                    st.warning(f"⚠️ {asset['symbol']}: No data")
+                            except Exception as e:
+                                failed.append(asset['symbol'])
+                                st.error(f"❌ {asset['symbol']}: {str(e)}")
+                        
+                        if all_data:
+                            # Combine all data (for Colab optimization)
+                            # You can modify this based on how your optimization handles multiple assets
+                            if len(all_data) == 1:
+                                # Single asset - send as is
+                                combined_data = list(all_data.values())[0]
+                            else:
+                                # Multiple assets - you might want to handle differently
+                                # For now, let's send them separately or combined based on your needs
+                                combined_data = pd.concat(all_data, axis=1, keys=all_data.keys())
+                            
+                            # Convert to CSV
+                            csv_buffer = io.StringIO()
+                            combined_data.to_csv(csv_buffer)
+                            csv_data = csv_buffer.getvalue()
+                            
+                            # Send to Colab
+                            if st.session_state.colab_url:
+                                result = upload_data_to_colab(st.session_state.colab_url, csv_data)
+                                if 'error' not in result:
+                                    st.success(f"✅ Data sent to Colab! Rows: {result.get('rows')}")
+                                    st.session_state.data_uploaded = True
+                                    
+                                    # Store metadata for optimization
+                                    st.session_state.data_metadata = {
+                                        'assets': [a['symbol'] for a in st.session_state.selected_assets],
+                                        'timeframe': selected_timeframe,
+                                        'period': period,
+                                        'rows': len(combined_data)
+                                    }
+                                else:
+                                    st.error(f"Failed to send to Colab: {result.get('error')}")
+                        
+                        if failed:
+                            st.warning(f"Failed to download: {', '.join(failed)}")
+            
+            with col_status:
+                if st.session_state.data_uploaded:
+                    st.success("✅ Data Ready")
+                else:
+                    st.info("⏳ Awaiting data")
+        
+        # Show data preview if uploaded
+        if st.session_state.data_uploaded and 'data_metadata' in st.session_state:
+            st.markdown("---")
+            st.subheader("📊 Data Summary")
+            
+            meta = st.session_state.data_metadata
+            col1, col2, col3, col4 = st.columns(4)
+            
+            col1.metric("Assets", len(meta['assets']))
+            col2.metric("Timeframe", TIMEFRAME_LIMITS[meta['timeframe']]['name'])
+            col3.metric("Period", meta['period'])
+            col4.metric("Total Rows", f"{meta['rows']:,}")
+            
+            st.info(f"Assets: {', '.join(meta['assets'])}")
     
     # ==========================================
     # TAB 2: OPTIMIZATION
