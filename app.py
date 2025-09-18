@@ -785,10 +785,28 @@ if st.session_state.colab_url:
         # Run optimization button (FIXED)
         st.markdown("---")
         
+        # Show current status and reset option
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            if st.session_state.optimization_running:
+                st.warning("⚠️ Optimization flag is currently active")
+            else:
+                st.success("✅ Ready to start optimization")
+        
+        with col2:
+            if st.button("🔄 Reset", help="Reset optimization status"):
+                st.session_state.optimization_running = False
+                debug_log("Optimization flag manually reset")
+                st.success("Flag reset!")
+                st.rerun()
+        
         if st.button("🚀 Start 3-Step Optimization", type="primary", use_container_width=True):
             debug_log("Optimization button clicked!")
+            debug_log(f"Current optimization_running flag: {st.session_state.optimization_running}")
             
             if not st.session_state.optimization_running:
+                debug_log("Flag is False - proceeding with optimization")
                 st.session_state.optimization_running = True
                 st.session_state.optimization_config = config
                 
@@ -839,9 +857,13 @@ if st.session_state.colab_url:
                                         st.session_state.optimization_results = final_results
                                         status_placeholder.success("✅ Optimization Complete!")
                                         progress_placeholder.success("🎉 Results are ready in the Results tab!")
-                                        break
+                                    debug_log("Optimization completed - resetting flag")
+                                    st.session_state.optimization_running = False
+                                    break
                                 elif status.get('status') == 'error':
                                     status_placeholder.error(f"❌ Optimization failed: {status.get('error', 'Unknown error')}")
+                                    debug_log("Optimization failed - resetting flag")
+                                    st.session_state.optimization_running = False
                                     break
                                 else:
                                     # Still running
@@ -852,6 +874,8 @@ if st.session_state.colab_url:
                                 # No status response - might still be starting up
                                 progress_placeholder.warning(f"⏳ Waiting for status... (check {i+1}/{max_checks})")
                         
+                        # Ensure flag is reset even if loop completes without status
+                        debug_log("Status checking complete - resetting flag")
                         st.session_state.optimization_running = False
                         
                     else:
@@ -865,7 +889,9 @@ if st.session_state.colab_url:
                     st.session_state.optimization_running = False
             
             else:
+                debug_log(f"Flag is True - blocking optimization. Flag value: {st.session_state.optimization_running}")
                 st.warning("⚠️ Optimization is already running!")
+                st.info("If this seems stuck, use the Reset button above.")
     
     # ==========================================
     # TAB 3: RESULTS (Enhanced)
