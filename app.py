@@ -52,10 +52,12 @@ def run_colab_optimization(url, config):
         response = requests.post(
             f"{url}/optimize",
             json=config,
+            headers={'Content-Type': 'application/json'},
             timeout=10
         )
         return response.json()
     except Exception as e:
+        print(f"Optimization request error: {e}")  # Add debugging
         return {'error': str(e)}
 
 def check_optimization_status(url):
@@ -74,13 +76,14 @@ def get_optimization_results(url):
     except:
         return None
 
-def upload_data_to_colab(url, file):
-    """Upload CSV file to Colab"""
+def upload_data_to_colab(url, csv_data):
+    """Send CSV data to Colab"""
     try:
-        files = {'file': file}
+        # Send as raw data, not as file
         response = requests.post(
             f"{url}/upload_data",
-            files=files,
+            data=csv_data,  # Send CSV string directly
+            headers={'Content-Type': 'text/plain'},
             timeout=30
         )
         return response.json()
@@ -714,26 +717,32 @@ if st.session_state.colab_url:
         # Run optimization button
         st.markdown("---")
         
-        if st.button("🚀 Start 3-Step Optimization", type="primary", use_container_width=True):
-            if not st.session_state.optimization_running:
-                st.session_state.optimization_running = True
-                st.session_state.optimization_config = config
-                
-                # Send to Colab
-                result = run_colab_optimization(st.session_state.colab_url, config)
-                
-                if 'error' not in result:
-                    st.success("✅ 3-Step Optimization Started!")
-                    st.info("""
-                    Optimization Progress:
-                    1. Step 1: Core Parameters → Finding optimal Pivot/ATR settings
-                    2. Step 2: Risk Management → Optimizing CB and position sizing
-                    3. Step 3: Filters → Testing combinations and thresholds
-                    """)
-                    st.rerun()
-                else:
-                    st.error(f"Failed to start: {result.get('error')}")
-                    st.session_state.optimization_running = False
+    if st.button("🚀 Start 3-Step Optimization", type="primary", use_container_width=True):
+        st.write("Button clicked!")  # Debug line
+        
+        if not st.session_state.optimization_running:
+            st.session_state.optimization_running = True
+            st.session_state.optimization_config = config
+            
+            st.write("Sending to Colab...")  # Debug line
+            
+            # Send to Colab
+            result = run_colab_optimization(st.session_state.colab_url, config)
+            
+            st.write(f"Result: {result}")  # Debug line
+            
+            if result and 'error' not in result:
+                st.success("✅ 3-Step Optimization Started!")
+                st.info("""
+                Optimization Progress:
+                1. Step 1: Core Parameters → Finding optimal Pivot/ATR settings
+                2. Step 2: Risk Management → Optimizing CB and position sizing
+                3. Step 3: Filters → Testing combinations and thresholds
+                """)
+                # Don't use st.rerun() immediately - let user see the messages
+            else:
+                st.error(f"Failed to start: {result.get('error', 'Unknown error')}")
+                st.session_state.optimization_running = False
     
     # ==========================================
     # TAB 3: RESULTS
