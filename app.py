@@ -894,17 +894,30 @@ if st.session_state.colab_url:
                         # Store the initial result
                         st.session_state.optimization_results = result
                         
-                        # Progress monitoring buttons
+                        # Progress monitoring buttons with better state management
+                        st.markdown("### Progress Monitoring")
+                        
                         col1, col2, col3, col4 = st.columns(4)
                         
                         with col1:
-                            if st.button("📊 Check Status", use_container_width=True, key="check_status"):
+                            if st.button("📊 Check Status", use_container_width=True, key="check_status_opt"):
+                                # Store the check in session state to persist across reloads
+                                st.session_state.last_status_check = datetime.now()
+                                
                                 with st.spinner("Checking Colab status..."):
                                     status_check = check_optimization_status(st.session_state.colab_url)
                                     if status_check:
                                         running = status_check.get('running', False)
                                         progress = status_check.get('progress', 0)
                                         message = status_check.get('message', 'Processing...')
+                                        
+                                        # Store status in session state
+                                        st.session_state.last_status = {
+                                            'running': running,
+                                            'progress': progress,
+                                            'message': message,
+                                            'timestamp': datetime.now().strftime("%H:%M:%S")
+                                        }
                                         
                                         if not running and progress == 100:
                                             st.success("✅ Optimization Complete!")
@@ -913,10 +926,22 @@ if st.session_state.colab_url:
                                         else:
                                             st.warning("Status unclear - check Colab directly")
                                     else:
+                                        st.session_state.last_status = {'error': 'Could not reach Colab'}
                                         st.warning("Could not reach Colab - check if it's still running")
                         
-                        with col2:
-                            if st.button("📈 Get Results", use_container_width=True, key="get_results_main"):
+                        # Show last status check if available
+                        if hasattr(st.session_state, 'last_status'):
+                            with col2:
+                                st.markdown("**Last Status:**")
+                                if 'error' in st.session_state.last_status:
+                                    st.error(st.session_state.last_status['error'])
+                                else:
+                                    status_info = st.session_state.last_status
+                                    st.info(f"Progress: {status_info.get('progress', 0)}%")
+                                    st.text(f"At: {status_info.get('timestamp', 'Unknown')}")
+                        
+                        with col3:
+                            if st.button("📈 Get Results", use_container_width=True, key="get_results_opt"):
                                 with st.spinner("Fetching results from Colab..."):
                                     final_results = get_optimization_results(st.session_state.colab_url)
                                     if final_results and ('assets' in final_results or len(str(final_results)) > 100):
@@ -926,20 +951,26 @@ if st.session_state.colab_url:
                                     else:
                                         st.info("⏳ Results not ready yet. Check Colab progress.")
                         
-                        with col3:
-                            if st.button("🛑 Stop Optimization", use_container_width=True, key="stop_optimization", type="secondary"):
-                                with st.spinner("Sending stop command to Colab..."):
+                        with col4:
+                            if st.button("🛑 Stop", use_container_width=True, key="stop_opt", type="secondary"):
+                                with st.spinner("Sending stop command..."):
                                     stop_result = stop_colab_optimization(st.session_state.colab_url)
                                     if stop_result and 'error' not in stop_result:
-                                        st.success("✅ Stop command sent to Colab!")
-                                        st.info("The optimization process should stop within a few seconds. Check your Colab output.")
+                                        st.success("✅ Stop command sent!")
+                                        st.info("Check Colab output for confirmation.")
                                     else:
-                                        st.error(f"Failed to send stop command: {stop_result.get('error', 'Unknown error')}")
-                                        st.info("You may need to manually stop it in Colab (Step 3c)")
+                                        st.error("Failed to send stop command")
                         
-                        with col4:
-                            if st.button("🔄 Refresh", use_container_width=True, key="refresh_page"):
-                                st.rerun()
+                        # Auto-refresh info
+                        st.markdown("---")
+                        st.info("""
+                        **Note:** Buttons may cause page refresh. Your optimization continues in Colab regardless.
+                        
+                        **Alternative monitoring:**
+                        - Check Colab Step 3b output directly
+                        - Visit: `{}/status` in browser
+                        - Visit: `{}/results` when complete
+                        """.format(st.session_state.colab_url, st.session_state.colab_url))
                         
                         # Reset flag since we're not blocking
                         st.session_state.optimization_running = False
