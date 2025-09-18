@@ -72,7 +72,7 @@ def run_colab_optimization(url, config):
             f"{url}/optimize",
             json=config,
             headers={'Content-Type': 'application/json'},
-            timeout=30  # Increased timeout
+            timeout=1800  # 30 minutes timeout for real optimization
         )
         
         debug_log(f"Optimization response status: {response.status_code}")
@@ -819,7 +819,7 @@ if st.session_state.colab_url:
                 progress_placeholder = st.empty()
                 
                 try:
-                    # Send to Colab
+                    # Send to Colab (quick start request, don't wait for completion)
                     status_placeholder.info("🚀 Sending optimization request to Colab...")
                     result = run_colab_optimization(st.session_state.colab_url, config)
                     
@@ -833,74 +833,84 @@ if st.session_state.colab_url:
                         1. Step 1: Core Parameters → Finding optimal Pivot/ATR settings
                         2. Step 2: Risk Management → Optimizing CB and position sizing
                         3. Step 3: Filters → Testing combinations and thresholds
+                        
+                        **This is now running in Colab!** You can:
+                        - Monitor progress in your Colab notebook
+                        - Check back here in 10-15 minutes for results
+                        - Use the "Check Results" button below
                         """)
                         
                         # Store the initial result
                         st.session_state.optimization_results = result
                         
-                        # Check if results are already available (immediate check)
-                        debug_log("Checking if results are immediately available...")
-                        immediate_results = get_optimization_results(st.session_state.colab_url)
-                        if immediate_results and 'assets' in immediate_results:
-                            debug_log("Results found immediately!")
-                            st.session_state.optimization_results = immediate_results
-                            status_placeholder.success("✅ Optimization Complete! (Results were ready)")
-                            progress_placeholder.success("🎉 Results are ready in the Results tab!")
-                            st.session_state.optimization_running = False
-                        else:
-                            # Show progress tracking
-                            progress_placeholder.info("⏳ Monitoring optimization progress...")
-                            
-                            # Check status periodically
-                            max_checks = 30  # Check for up to 5 minutes
-                            for i in range(max_checks):
-                                time.sleep(10)  # Wait 10 seconds between checks
-                                
-                                status = check_optimization_status(st.session_state.colab_url)
-                                debug_log(f"Status check {i+1}/{max_checks}: {status}")
-                                
-                                if status:
-                                    # Check if optimization is complete
-                                    if status.get('running') == False:
-                                        # Optimization is complete - get results
-                                        if 'results' in status:
-                                            # Results are already in the status response
-                                            st.session_state.optimization_results = status['results']
-                                            status_placeholder.success("✅ Optimization Complete!")
-                                            progress_placeholder.success("🎉 Results are ready in the Results tab!")
-                                        else:
-                                            # Get results from separate endpoint
-                                            final_results = get_optimization_results(st.session_state.colab_url)
-                                            if final_results:
-                                                st.session_state.optimization_results = final_results
-                                                status_placeholder.success("✅ Optimization Complete!")
-                                                progress_placeholder.success("🎉 Results are ready in the Results tab!")
-                                        debug_log("Optimization completed - resetting flag")
-                                        st.session_state.optimization_running = False
-                                        break
-                                    elif status.get('status') == 'error':
-                                        status_placeholder.error(f"❌ Optimization failed: {status.get('error', 'Unknown error')}")
-                                        debug_log("Optimization failed - resetting flag")
-                                        st.session_state.optimization_running = False
-                                        break
+                        # Add manual result checking buttons
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if st.button("🔄 Check Progress", use_container_width=True):
+                                status_check = check_optimization_status(st.session_state.colab_url)
+                                if status_check:
+                                    if status_check.get('running') == False:
+                                        st.success("✅ Optimization Complete!")
+                                        final_results = get_optimization_results(st.session_state.colab_url)
+                                        if final_results:
+                                            st.session_state.optimization_results = final_results
+                                            st.balloons()
                                     else:
-                                        # Still running or other status
-                                        progress = status.get('progress', 0)
-                                        current_step = status.get('current_step') or status.get('message', 'Processing...')
-                                        progress_placeholder.info(f"⏳ Progress: {progress}% - {current_step}")
+                                        progress = status_check.get('progress', 0)
+                                        message = status_check.get('message', 'Processing...')
+                                        st.info(f"⏳ Progress: {progress}% - {message}")
                                 else:
-                                    # No status response - might still be starting up
-                                    progress_placeholder.warning(f"⏳ Waiting for status... (check {i+1}/{max_checks})")
-                            
-                            # Ensure flag is reset even if loop completes without status
-                            debug_log("Status checking complete - resetting flag")
-                            st.session_state.optimization_running = False
+                                    st.warning("Could not check status - optimization may still be running")
+                        
+                        with col2:
+                            if st.button("📈 Get Results", use_container_width=True):
+                                final_results = get_optimization_results(st.session_state.colab_url)
+                                if final_results and 'assets' in final_results:
+                                    st.session_state.optimization_results = final_results
+                                    st.success("✅ Results retrieved! Check the Results tab.")
+                                    st.balloons()
+                                else:
+                                    st.info("⏳ Results not ready yet. Optimization may still be running.")
+                        
+                        # Auto status checking in background (non-blocking)
+                        progress_placeholder.info("💡 **Tip:** Monitor your Colab notebook for real-time progress!")
+                        
+                        # Reset flag immediately since we're not blocking
+                        st.session_state.optimization_running = False
                         
                     else:
                         error_msg = result.get('error', 'Unknown error') if result else 'No response from Colab'
                         status_placeholder.error(f"❌ Failed to start: {error_msg}")
                         st.session_state.optimization_running = False
                         
+                except requests.exceptions.Timeout:
+                    # This is normal for long optimizations
+                    status_placeholder.info("⏳ Optimization started (request timed out, but this is normal)")
+                    st.info("""
+                    **Optimization Status:** Request timed out, but this is expected for real optimizations.
+                    
+                    Your optimization is likely running in Colab. You can:
+                    1. **Monitor Colab directly** - Check your Step 3b output for progress
+                    2. **Come back in 10-15 minutes** and use the "Get Results" button
+                    3. **Check the Results tab** periodically
+                    """)
+                    
+                    # Add result checking button for timeout case
+                    if st.button("📈 Try Get Results Now", use_container_width=True):
+                        try:
+                            final_results = get_optimization_results(st.session_state.colab_url)
+                            if final_results and 'assets' in final_results:
+                                st.session_state.optimization_results = final_results
+                                st.success("✅ Results found! Check the Results tab.")
+                                st.balloons()
+                            else:
+                                st.info("⏳ Results not ready yet. Keep checking Colab progress.")
+                        except:
+                            st.info("⏳ Still processing. Check your Colab output for progress.")
+                    
+                    st.session_state.optimization_running = False
+                    
                 except Exception as e:
                     status_placeholder.error(f"❌ Connection error: {str(e)}")
                     debug_log(f"Exception during optimization: {str(e)}")
