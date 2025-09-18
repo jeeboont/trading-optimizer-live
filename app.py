@@ -502,145 +502,238 @@ if st.session_state.colab_url:
     # ==========================================
     
     with tab2:
-        st.header("⚙️ Strategy Optimization")
+        st.header("⚙️ Optimization Configuration")
         
-        # Check if optimization is running
-        if st.session_state.optimization_running:
-            # Show progress
-            st.info("🔄 Optimization in progress...")
-            
-            # Progress monitoring
-            status = check_optimization_status(st.session_state.colab_url)
-            
-            if status:
-                # Progress bar
-                progress = status.get('progress', 0) / 100
-                st.progress(progress)
-                st.write(f"Status: {status.get('message', 'Processing...')}")
-                
-                # Check if complete
-                if not status.get('running', True):
-                    st.session_state.optimization_running = False
-                    st.session_state.optimization_results = status.get('results')
-                    st.success("✅ Optimization Complete!")
-                    st.balloons()
-                    
-                    # Auto-refresh
-                    time.sleep(1)
-                    st.rerun()
-            
-            # Refresh button
-            if st.button("🔄 Refresh Status"):
-                st.rerun()
-            
-            # Stop button
-            if st.button("⏹️ Stop Optimization"):
-                st.session_state.optimization_running = False
+        # Check connection and data status
+        if not st.session_state.colab_url:
+            st.warning("⚠️ Please connect to Colab first")
+            st.stop()
         
-        else:
-            # Configuration interface
-            st.subheader("📋 Optimization Configuration")
+        if not st.session_state.data_uploaded:
+            st.info("📊 Please upload data first")
+            st.stop()
+        
+        st.subheader("🎯 3-Step Optimization Strategy")
+        
+        # Optimization approach selector
+        approach = st.radio(
+            "Select optimization approach:",
+            ["Quick Test", "Standard 3-Step", "Comprehensive 3-Step", "Custom"],
+            index=1,
+            help="Based on your proven 3-step methodology"
+        )
+        
+        if approach == "Quick Test":
+            st.info("""
+            **Quick Test (2-3 minutes)**
+            - Limited ranges for fast validation
+            - Good for testing setup
+            """)
+            config = {
+                'optimization_type': '3_step',
+                # Step 1: Core
+                'pivot_periods': [10],
+                'atr_factors': [2.0],
+                'atr_periods': [14],
+                # Step 2: Risk
+                'risk_percents': [1.0],
+                'cb_buffer_pcts': [0.03],
+                # Step 3: Filters
+                'use_xtrend': True,
+                'use_ema': True,
+                'use_adx': False,
+                'ema_periods': [30],
+                'adx_thresholds': [20]
+            }
             
-            col1, col2, col3 = st.columns(3)
+        elif approach == "Standard 3-Step":
+            st.success("""
+            **Standard 3-Step Optimization (10-15 minutes)**
+            - Your proven parameter ranges
+            - Walk-forward validation
+            - Systematic progression
+            """)
+            config = {
+                'optimization_type': '3_step',
+                # Step 1: Core Parameters (as you specified)
+                'pivot_periods': [5, 7, 10, 12, 15],  
+                'atr_factors': [0.8, 1.0, 1.2, 1.5, 2.0],  # Coarse grid
+                'atr_periods': [10, 14, 20, 30],
+                # Step 2: Risk Management 
+                'risk_percents': [0.5, 1.0, 1.5, 2.0],
+                'cb_buffer_pcts': [0.01, 0.03, 0.05, 0.07, 0.10, 0.13],
+                # Step 3: Filters
+                'filter_combinations': [
+                    {'use_xtrend': True, 'use_ema': False, 'use_adx': False},
+                    {'use_xtrend': True, 'use_ema': True, 'use_adx': False},
+                    {'use_xtrend': True, 'use_ema': False, 'use_adx': True},
+                    {'use_xtrend': True, 'use_ema': True, 'use_adx': True},
+                ],
+                'ema_periods': [30, 50, 100],
+                'adx_thresholds': [15, 20, 25]
+            }
+            
+        elif approach == "Comprehensive 3-Step":
+            st.warning("""
+            **Comprehensive 3-Step (30-45 minutes)**
+            - Full parameter ranges
+            - Fine-tuning after coarse search
+            - Maximum optimization depth
+            """)
+            config = {
+                'optimization_type': '3_step_comprehensive',
+                # Step 1: Core - Full range
+                'pivot_periods': list(range(2, 16)),  # 2-15 all integers
+                'atr_factors': [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0],
+                'atr_periods': list(range(10, 41, 2)),  # 10-40 step 2
+                # Step 2: Risk - Full range
+                'risk_percents': [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0],
+                'cb_buffer_pcts': [0.01, 0.02, 0.03, 0.04, 0.05, 0.07, 0.10, 0.13, 0.15],
+                # Step 3: Filters - All combinations
+                'filter_combinations': 'all',  # Test all possible combinations
+                'ema_periods': list(range(50, 251, 50)),  # 50-250 step 50
+                'adx_thresholds': list(range(5, 26, 5))  # 5-25 step 5
+            }
+        
+        else:  # Custom
+            st.info("Define your custom 3-step parameters")
+            config = {'optimization_type': '3_step_custom'}
+            
+            # Custom parameter inputs
+            col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("**Core Parameters**")
-                pivot_periods = st.multiselect(
-                    "Pivot Periods",
-                    [5, 7, 10, 12, 15, 20],
-                    default=[7, 10, 15]
-                )
-                atr_factors = st.multiselect(
-                    "ATR Factors",
-                    [0.5, 0.8, 1.0, 1.5, 2.0, 2.5],
-                    default=[0.8, 1.5, 2.0]
-                )
-                atr_periods = st.multiselect(
-                    "ATR Periods",
-                    [10, 14, 20, 30],
-                    default=[10, 14, 20]
-                )
-            
+                st.markdown("### Step 1: Core Parameters")
+                
+                # Pivot periods
+                pivot_min = st.number_input("Pivot Min", 2, 30, 5)
+                pivot_max = st.number_input("Pivot Max", 2, 30, 15)
+                pivot_step = st.number_input("Pivot Step", 1, 5, 1)
+                config['pivot_periods'] = list(range(pivot_min, pivot_max + 1, pivot_step))
+                
+                # ATR Factor
+                atr_factor_min = st.number_input("ATR Factor Min", 0.5, 3.0, 0.8)
+                atr_factor_max = st.number_input("ATR Factor Max", 0.5, 3.0, 2.0)
+                atr_factor_step = st.number_input("ATR Factor Step", 0.05, 0.5, 0.1)
+                config['atr_factors'] = [round(x, 2) for x in 
+                                       np.arange(atr_factor_min, atr_factor_max + atr_factor_step, atr_factor_step)]
+                
+                # ATR Period
+                atr_period_min = st.number_input("ATR Period Min", 5, 50, 10)
+                atr_period_max = st.number_input("ATR Period Max", 5, 50, 30)
+                atr_period_step = st.number_input("ATR Period Step", 1, 10, 5)
+                config['atr_periods'] = list(range(atr_period_min, atr_period_max + 1, atr_period_step))
+                
             with col2:
-                st.markdown("**Risk Management**")
-                risk_percents = st.multiselect(
-                    "Risk % per Trade",
-                    [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-                    default=[1.0, 1.5, 2.0]
+                st.markdown("### Step 2: Risk Management")
+                
+                # Risk Percent
+                risk_values = st.text_input(
+                    "Risk % (comma separated)",
+                    "0.5, 1.0, 1.5, 2.0"
                 )
-                cb_buffer_pcts = st.multiselect(
-                    "Circuit Breaker %",
-                    [0.01, 0.03, 0.05, 0.07, 0.10],
-                    default=[0.03, 0.05, 0.07]
+                config['risk_percents'] = [float(x.strip()) for x in risk_values.split(',')]
+                
+                # CB Buffer
+                cb_values = st.text_input(
+                    "CB Buffer % (comma separated)",
+                    "0.01, 0.03, 0.05, 0.07, 0.10, 0.13"
                 )
-                enable_cb = st.checkbox("Enable Circuit Breaker", value=True)
-            
-            with col3:
-                st.markdown("**Filters**")
-                use_xtrend = st.checkbox("Use XTrend", value=True)
-                use_ema = st.checkbox("Use EMA Filter", value=True)
-                use_adx = st.checkbox("Use ADX Filter", value=False)
+                config['cb_buffer_pcts'] = [float(x.strip()) for x in cb_values.split(',')]
+                
+                st.markdown("### Step 3: Filters")
+                
+                # Filter combinations
+                use_xtrend = st.checkbox("Test XTrend", True)
+                use_ema = st.checkbox("Test EMA", True)
+                use_adx = st.checkbox("Test ADX", False)
                 
                 if use_ema:
-                    ema_periods = st.multiselect(
-                        "EMA Periods",
-                        [20, 30, 50, 100, 200],
-                        default=[30, 50]
-                    )
-                else:
-                    ema_periods = []
-            
-            st.markdown("---")
-            
-            # Advanced settings
-            with st.expander("🔧 Advanced Settings"):
-                train_split = st.slider("Training Split %", 50, 90, 70)
-                min_trades = st.number_input("Min Trades", 50, 500, 100)
-                objective = st.selectbox(
-                    "Optimization Objective",
-                    ["Sharpe Ratio", "Profit Factor", "Total Return"]
+                    ema_values = st.text_input("EMA Periods", "30, 50, 100")
+                    config['ema_periods'] = [int(x.strip()) for x in ema_values.split(',')]
+                
+                if use_adx:
+                    adx_values = st.text_input("ADX Thresholds", "15, 20, 25")
+                    config['adx_thresholds'] = [int(x.strip()) for x in adx_values.split(',')]
+        
+        # Display optimization summary
+        st.markdown("---")
+        st.subheader("📊 Optimization Summary")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if 'pivot_periods' in config:
+                st.metric(
+                    "Step 1: Core Combinations",
+                    len(config['pivot_periods']) * len(config['atr_factors']) * len(config['atr_periods'])
                 )
+        
+        with col2:
+            if 'risk_percents' in config:
+                st.metric(
+                    "Step 2: Risk Combinations",
+                    len(config['risk_percents']) * len(config['cb_buffer_pcts'])
+                )
+        
+        with col3:
+            if approach != "Custom":
+                st.metric(
+                    "Step 3: Filter Tests",
+                    len(config.get('filter_combinations', [])) if isinstance(config.get('filter_combinations'), list) else "All"
+                )
+        
+        # Walk-forward validation settings
+        with st.expander("📈 Walk-Forward Validation Settings", expanded=True):
+            col1, col2 = st.columns(2)
             
-            # Run optimization button
-            col1, col2, col3 = st.columns([1, 2, 1])
-            
+            with col1:
+                train_split = st.slider(
+                    "Training Data %",
+                    50, 90, 70, 5,
+                    help="Your recommended 70/30 split"
+                )
+                config['train_split'] = train_split / 100
+                
             with col2:
-                if st.button(
-                    "🚀 **Start Optimization on Colab**", 
-                    use_container_width=True,
-                    type="primary"
-                ):
-                    # Prepare configuration
-                    config = {
-                        'pivot_periods': pivot_periods,
-                        'atr_factors': atr_factors,
-                        'atr_periods': atr_periods,
-                        'risk_percents': risk_percents,
-                        'cb_buffer_pcts': cb_buffer_pcts,
-                        'enable_cb': enable_cb,
-                        'use_xtrend': use_xtrend,
-                        'use_ema': use_ema,
-                        'use_adx': use_adx,
-                        'ema_periods': ema_periods if use_ema else [],
-                        'train_split': train_split / 100,
-                        'min_trades': min_trades,
-                        'objective': objective.lower().replace(' ', '_')
-                    }
-                    
-                    # Send to Colab
-                    with st.spinner("Sending to Colab..."):
-                        result = run_colab_optimization(
-                            st.session_state.colab_url,
-                            config
-                        )
-                        
-                        if 'error' not in result:
-                            st.session_state.optimization_running = True
-                            st.success("✅ Optimization started on Colab!")
-                            time.sleep(2)
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Failed to start: {result['error']}")
+                walk_forward_windows = st.number_input(
+                    "Walk-Forward Windows",
+                    1, 10, 1,
+                    help="Number of rolling windows for validation"
+                )
+                config['walk_forward_windows'] = walk_forward_windows
+        
+        # Additional settings
+        config['min_trades'] = st.number_input("Minimum Trades for Valid Result", 10, 100, 30)
+        config['optimization_metric'] = st.selectbox(
+            "Primary Optimization Metric",
+            ["composite_score", "sharpe_ratio", "profit_factor", "win_rate"],
+            help="Composite score uses weighted combination"
+        )
+        
+        # Run optimization button
+        st.markdown("---")
+        
+        if st.button("🚀 Start 3-Step Optimization", type="primary", use_container_width=True):
+            if not st.session_state.optimization_running:
+                st.session_state.optimization_running = True
+                st.session_state.optimization_config = config
+                
+                # Send to Colab
+                result = run_colab_optimization(st.session_state.colab_url, config)
+                
+                if 'error' not in result:
+                    st.success("✅ 3-Step Optimization Started!")
+                    st.info("""
+                    Optimization Progress:
+                    1. Step 1: Core Parameters → Finding optimal Pivot/ATR settings
+                    2. Step 2: Risk Management → Optimizing CB and position sizing
+                    3. Step 3: Filters → Testing combinations and thresholds
+                    """)
+                    st.rerun()
+                else:
+                    st.error(f"Failed to start: {result.get('error')}")
+                    st.session_state.optimization_running = False
     
     # ==========================================
     # TAB 3: RESULTS
